@@ -1,0 +1,11 @@
+{
+  "id": "local.omp",
+  "name": "OMP",
+  "apiVersion": 1,
+  "description": "Run local OMP agents in Buzz with persistent conversations.",
+  "discovery": { "category": "agents", "tags": ["code", "coding-agents"] },
+  "host": {
+    "processes": [{ "id": "omp", "program": "omp", "args": ["--mode", "rpc", "--no-ui"] }],
+    "files": true
+  }
+}
