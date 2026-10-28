@@ -135,7 +135,7 @@ export function apply(ctx) {
       h("p", { className: "buzz-field-description", style: { margin: 0 } }, "Use the conversation’s session controls to interrupt, compact, or start fresh. OMP keeps transcripts under ~/.buzz/omp; opening one with omp --session <path> shows its full history."));
   }
   agents.register({
-    id: "omp", title: "OMP", icon: OmpIcon, description: "Local OMP with persistent conversations and Buzz read/send tools.",
+    id: "omp", title: "OMP", icon: OmpIcon, description: "Local OMP with workspace files, Buzz tools, Attention and persistent conversations.",
     defaults: () => ({ config: { ...DEFAULTS } }),
     Create: (props) => h(Fields, { ...props, hideModel: true }),
     CreateModel: (props) => h(Fields, { ...props, modelOnly: true }),

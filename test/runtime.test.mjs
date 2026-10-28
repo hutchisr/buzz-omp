@@ -8,13 +8,14 @@ test("automatic thinking survives saved config without becoming the inherited de
   assert.equal(config({ effort: "unsupported" }).effort, "");
 });
 
-const owner = "a".repeat(64), pubkey = "b".repeat(64), channelId = "c".repeat(64), root = "d".repeat(64), reply = "e".repeat(64);
+const owner = "a".repeat(64), pubkey = "b".repeat(64), channelId = "7d35f5f6-8394-4dc4-9039-555f463c0e88", root = "d".repeat(64), reply = "e".repeat(64);
 function setup(channelType = "channel") {
   const storage = new Map();
   const agent = { pubkey, owner, config: { scope: "thread" } };
+  const session = { channels: { get: () => ({ channelType }) } };
   const agents = { storage: { get: (key) => storage.get(key), set: async (key, value) => storage.set(key, value) },
     relay: () => ({ snapshot: () => ({ status: "ready", viewer: owner, origin: "https://community.invalid",
-      session: { channels: { get: () => ({ channelType }) } } }) }) };
+      session }) }) };
   return { runtime: new Runtime({}, agents), agent, agents };
 }
 test("thread routing follows reply markers, while shared sessions retain each turn's reply destination", () => {
@@ -32,6 +33,69 @@ test("thread routing follows reply markers, while shared sessions retain each tu
   assert.equal(solo.root, undefined);
   assert.equal(solo.replyRoot, undefined);
   assert.equal(solo.topLevel, true);
+});
+test("routing accepts UUID and legacy hex channels but still requires hex thread IDs", () => {
+  const { runtime, agent } = setup();
+  for (const channel of [channelId, "c".repeat(64)]) {
+    assert.equal(runtime.place(agent, channel, root).channelId, channel);
+  }
+  for (const invalid of ["", "not-a-channel", `${channelId}/extra`, `${channelId}\n`]) {
+    assert.throws(() => runtime.place(agent, invalid, root), /Invalid Buzz conversation ID/);
+  }
+  assert.throws(() => runtime.place(agent, channelId, channelId), /Invalid Buzz conversation ID/);
+});
+test("addressed Attention routes channel and thread destinations without synthetic event IDs", () => {
+  const { runtime, agent } = setup();
+  const delivery = { agent, config: {}, trigger: { type: "attention", channel: channelId, id: "attention:timer", text: "Check" } };
+  assert.equal(runtime.route(delivery).replyRoot, undefined);
+  assert.equal(runtime.route(delivery).topLevel, false, "Channel delivery can still explicitly reply to a thread");
+  delivery.trigger.root = root;
+  assert.equal(runtime.route(delivery).replyRoot, root);
+  assert.equal(setup("solo").runtime.route(delivery).replyRoot, undefined);
+});
+
+test("addressed Attention rebuilds its prompt after readiness and never auto-posts quiet output", async () => {
+  for (const stale of [false, true]) {
+    const { runtime, agent } = setup();
+    let ready = false, refreshed = 0, ignored = false, work;
+    const prompts = [];
+    agent.query = async () => [];
+    agent.publish = async () => assert.fail("Attention final text must not be posted automatically");
+    agent.attention = { enabled: () => true, interests: () => ["release"] };
+    runtime.agents.core = async () => null;
+    runtime.host = {
+      resolveDirectory: async (path) => path,
+      async spawn(_id, options) {
+        const emit = (frame) => options.onStdout(`${JSON.stringify(frame)}\n`);
+        emit({ type: "ready", protocolVersion: 1 });
+        ready = true;
+        return { exited: new Promise(() => {}), kill: async () => {}, write: async (line) => {
+          const command = JSON.parse(line);
+          emit({ type: "response", command: command.type, id: command.id, success: true, data: {} });
+          if (command.type === "set_host_tools") assert(command.tools.some((tool) => tool.name === "buzz_watch_add"));
+          if (command.type !== "prompt") return;
+          prompts.push(command.message);
+          emit({ type: "message_end", message: { role: "assistant", stopReason: "stop", content: [{ type: "text", text: "No change" }] } });
+          emit({ type: "prompt_result", id: command.id, status: "completed", agentInvoked: true, sessionSettled: true });
+        } };
+      },
+    };
+    await runtime.run({ agent, config: {}, signal: new AbortController().signal, current: () => true,
+      trigger: { type: "attention", channel: channelId, text: "outdated instructions", id: "attention:timer" },
+      wakeText: async () => { assert(ready); refreshed++; return stale ? undefined : "<interest>Fresh instructions</interest>"; },
+      ignored: () => { ignored = true; }, workingUntil: (value) => { work = value; } });
+    assert.deepEqual(await work, { ok: true });
+    assert.equal(refreshed, 1);
+    assert.equal(ignored, stale);
+    assert.equal(prompts.length, stale ? 0 : 1);
+    if (!stale) {
+      assert.match(prompts[0], /<interest>Fresh instructions<\/interest>/);
+      assert.match(prompts[0], /review your Interests/);
+      assert(!prompts[0].includes("Authorized triggering message"));
+      assert(!prompts[0].includes("outdated instructions"));
+    }
+    await runtime.dispose();
+  }
 });
 test("same-session work serializes and a stopped queued turn never executes", async () => {
   const { runtime, agent } = setup();
@@ -62,6 +126,7 @@ test("New session preserves old history by changing the durable generation", asy
   assert.equal(runtime.saved(pubkey).get(place.key).epoch, 1);
   const restarted = new Runtime({}, agents);
   assert.equal(restarted.saved(pubkey).get(place.key).epoch, 1);
+  assert.equal(restarted.sessions(pubkey)[0].channelId, channelId);
   await restarted.control(agent, { channelId, root }, "new");
   assert.equal(restarted.saved(pubkey).get(place.key).epoch, 2);
   await Promise.all([runtime.dispose(), restarted.dispose()]);

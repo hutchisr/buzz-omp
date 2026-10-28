@@ -4,12 +4,21 @@
   "private": true,
   "type": "module",
   "description": "Local OMP agents for Buzz",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "node --test test/*.test.mjs",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "vendor:buzz": "node scripts/vendor-buzz-tools.mjs"
   },
-  "dependencies": { "@noble/curves": "2.0.1" },
-  "devDependencies": { "esbuild": "0.25.12" }
+  "dependencies": {
+    "@noble/curves": "2.0.1",
+    "mdast-util-from-markdown": "2.0.3",
+    "nostr-tools": "2.25.2"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12"
+  }
 }

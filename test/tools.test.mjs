@@ -2,10 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { schnorr } from "@noble/curves/secp256k1.js";
 import { ownerAttested } from "../src/auth.mjs";
-import { callTool, publish } from "../src/tools.mjs";
+import { TOOLS, callTool, publish } from "../src/tools.mjs";
 
 const hex = (byte) => byte.repeat(64);
-const channel = hex("a"), root = hex("b"), other = hex("c"), author = hex("d");
+const channel = "7d35f5f6-8394-4dc4-9039-555f463c0e88", root = hex("b"), other = hex("c"), author = hex("d");
 const key = new Uint8Array(32);
 key[31] = 1;
 const owner = Buffer.from(schnorr.getPublicKey(key)).toString("hex");
@@ -35,6 +35,32 @@ function host(events = []) {
   };
 }
 const text = (result) => result.content[0].text;
+
+test("tool schemas distinguish UUID channels from hex message IDs", () => {
+  for (const tool of TOOLS) {
+    const properties = tool.parameters.properties;
+    const channelPattern = new RegExp(properties.channel.pattern);
+    assert(channelPattern.test(channel), tool.name);
+    assert(channelPattern.test(other), "legacy hex channels remain valid");
+    assert(!channelPattern.test("not-a-channel"));
+    for (const name of ["thread", "reply"].filter((name) => properties[name])) {
+      const pattern = new RegExp(properties[name].pattern);
+      assert(pattern.test(root));
+      assert(!pattern.test(channel), `${name} must remain a message ID`);
+    }
+  }
+});
+
+test("explicit replies resolve UUID channels outside the current conversation", async () => {
+  const elsewhere = "97730a14-8510-4cdc-9cd7-5fe730a831b1";
+  const agent = host([message(root, 1, elsewhere)]);
+  const result = await callTool("buzz_send", { reply: root, text: "reply" }, { agent, channel });
+  assert.equal(result.isError, undefined, text(result));
+  assert.deepEqual(agent.published[0].tags, [["h", elsewhere], ["e", root, "", "reply"]]);
+  const standalone = await callTool("buzz_send", { channel: elsewhere, text: "top" }, { agent });
+  assert.equal(standalone.isError, undefined, text(standalone));
+  assert.deepEqual(agent.published[1].tags, [["h", elsewhere]]);
+});
 
 // These tests exercise cryptographically signed delegations, not a stub verifier.
 test("owner authorization binds delegation to key, kind, and strict time bounds", async () => {
@@ -135,6 +161,8 @@ test("invalid inputs and missing standalone destinations never publish", async (
     ...[0, 101, 1.5, "2", null, NaN].map((limit) => ["buzz_read", { limit }]),
     ...["", " ", "x".repeat(50001), 1, null].map((value) => ["buzz_send", { text: value }]),
     ["buzz_send", { text: "x", channel: "not-hex" }], ["buzz_send", { text: "x", thread: root, reply: root }],
+    ...["thread", "reply"].map((key) => ["buzz_send", { text: "x", [key]: channel }]),
+    ...["", channel.toUpperCase(), `${channel}/extra`, `${channel}\n`].map((value) => ["buzz_send", { text: "x", channel: value }]),
     ["buzz_send", { text: "x", secret: "no" }],
   ]) {
     assert.equal((await callTool(name, args, { agent, channel, root })).isError, true, JSON.stringify(args));

@@ -1,0 +1,26 @@
+{
+  "repository": "https://github.com/block/buzz",
+  "revision": "c75ef6821f495c20a18f33577d2dc519efe942ce",
+  "files": [
+    "src/buzz-mcp/app-client.ts",
+    "src/buzz-mcp/attention.ts",
+    "src/buzz-mcp/rpc.ts",
+    "src/buzz-mcp/session-tools.ts",
+    "src/buzz-mcp/tools.ts",
+    "src/features/agent-harness/attention-prompt.ts",
+    "src/features/agents/owner-attestation.ts",
+    "src/features/relay/attachment-limits.ts",
+    "src/features/relay/attachments.ts",
+    "src/features/relay/budget.ts",
+    "src/features/relay/channel-details-protocol.ts",
+    "src/features/relay/channel-labels.ts",
+    "src/features/relay/channel-lifecycle-protocol.ts",
+    "src/features/relay/errors.ts",
+    "src/features/relay/events.ts",
+    "src/features/relay/message-content.ts",
+    "src/features/relay/profile-search.ts",
+    "src/features/relay/thread-reference.ts",
+    "src/features/relay/video-preparation.ts",
+    "src/features/relay/workflow-attribution.ts"
+  ]
+}

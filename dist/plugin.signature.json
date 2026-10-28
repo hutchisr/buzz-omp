@@ -1,12 +1,12 @@
 {
-  "id": "d2222306b7516af8fd0ca9dd605821b46a6c7752a4ff06791dac73525ed1497b",
+  "id": "ce4c391278ebff481b47d4ab0adced10578c58145238127f73b440b5108a6957",
   "pubkey": "0d3d8c93fcccaa8535be2c47e8f21136d15132af043b25015122eb048d3742e4",
-  "created_at": 1792901266,
+  "created_at": 1793220455,
   "kind": 1064,
   "tags": [
     [
       "x",
-      "ee32a779f5fd5fbf2bd7da54586050c8940a95f4bc05cbdc883dff7f36a84caf"
+      "435ee158a69a19c9c633789e8bf5ef5a546a1146ddba231427f5fa24e3f26ea9"
     ],
     [
       "t",
@@ -14,5 +14,5 @@
     ]
   ],
   "content": "",
-  "sig": "12ddc507197a4873d16de76c077b01d320c01385c748f2ce3dbc2bffb2aba9f6f0b718b99b1e821777157b8c996d6f9787aa9cea9cefe098cf6a85506e7092ca"
+  "sig": "bc8907c6e2cfe5b50184824e53c602a8deaa031abda15f27d16df45e8248b5669fd32ada44efb00daeceaa64916bfdc96ca58922039c9f7fc0a838847b66879c"
 }

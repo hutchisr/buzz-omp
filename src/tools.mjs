@@ -1,6 +1,12 @@
 const HEX = /^[0-9a-f]{64}$/;
+// Channel identifiers are UUIDs in Buzz; older channels can use hex IDs.
+// Thread/reply identifiers are always Nostr event IDs.
+const CHANNEL_ID = /^(?:[0-9a-f]{64}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
 const KINDS = [9, 40002, 40008, 45001, 45003];
 const idSchema = { type: "string", pattern: "^[0-9a-f]{64}$" };
+const channelSchema = { type: "string", pattern: CHANNEL_ID.source, description: "Buzz channel UUID (or legacy hex channel ID)." };
+
+export const isChannelId = (value) => typeof value === "string" && CHANNEL_ID.test(value);
 
 export const TOOLS = [
   {
@@ -8,7 +14,7 @@ export const TOOLS = [
     description: "Read recent messages oldest first. Defaults to this conversation. An explicit channel reads that channel; thread resolves a message to its thread and channel. Standalone turns need an explicit destination.",
     parameters: {
       type: "object", additionalProperties: false,
-      properties: { channel: idSchema, thread: idSchema, limit: { type: "integer", minimum: 1, maximum: 100, description: "Maximum messages, including the thread root; default 30." } },
+      properties: { channel: channelSchema, thread: idSchema, limit: { type: "integer", minimum: 1, maximum: 100, description: "Maximum messages, including the thread root; default 30." } },
     },
   },
   {
@@ -16,13 +22,18 @@ export const TOOLS = [
     description: "Send text to this conversation. An explicit channel starts a top-level message; thread or reply resolves a message to its thread root. Use only one of thread/reply. The current Solo chat stays top-level. Standalone turns need an explicit destination.",
     parameters: {
       type: "object", additionalProperties: false, required: ["text"],
-      properties: { channel: idSchema, thread: idSchema, reply: idSchema, text: { type: "string", minLength: 1, maxLength: 50000 } },
+      properties: { channel: channelSchema, thread: idSchema, reply: idSchema, text: { type: "string", minLength: 1, maxLength: 50000 } },
     },
   },
 ];
 
 function validId(value, name) {
   if (typeof value !== "string" || !HEX.test(value)) throw new Error(`${name} must be a 64-character lowercase hex ID.`);
+  return value;
+}
+
+function validChannel(value, name) {
+  if (!isChannelId(value)) throw new Error(`${name} must be a lowercase UUID or 64-character lowercase hex channel ID.`);
   return value;
 }
 
@@ -73,19 +84,19 @@ async function destination(args, context, sending) {
     const events = await query(agent, [{ ids: [root], kinds: KINDS, limit: 1 }], signal);
     const event = events.find((event) => event.id === root && KINDS.includes(event.kind));
     if (!event) throw new Error(`No message ${root}.`);
-    const foundChannel = validId(channelOf(event), "Message channel");
+    const foundChannel = validChannel(channelOf(event), "Message channel");
     if (args.channel !== undefined && args.channel !== foundChannel) throw new Error("The message belongs to a different channel.");
     channel = foundChannel;
     root = rootOf(event);
   }
-  validId(channel, "channel (required outside a conversation)");
+  validChannel(channel, "channel (required outside a conversation)");
   if (root !== undefined) validId(root, "thread");
   if (sending && root && context.topLevel && channel === context.channel) throw new Error("This chat stays at the top level: send without thread or reply.");
   return { channel, root };
 }
 
 export async function publish(agent, channel, root, content) {
-  validId(channel, "channel");
+  validChannel(channel, "channel");
   if (root !== undefined) validId(root, "thread");
   validText(content);
   return agent.publish({
@@ -101,7 +112,8 @@ export async function callTool(name, args, context) {
     if (!args || typeof args !== "object" || Array.isArray(args)) throw new Error("Tool arguments must be an object.");
     for (const key of Object.keys(args)) {
       if (!Object.hasOwn(definition.parameters.properties, key)) throw new Error(`Unknown argument: ${key}`);
-      if (["channel", "thread", "reply"].includes(key)) validId(args[key], key);
+      if (key === "channel") validChannel(args[key], key);
+      if (["thread", "reply"].includes(key)) validId(args[key], key);
     }
     const sending = name === "buzz_send";
     if (sending) {
