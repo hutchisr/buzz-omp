@@ -22,6 +22,7 @@ Controls use Buzz’s shared button, field, preference-row, and popup styles in 
 ## Behavior
 
 - One persistent OMP session per Buzz thread by default; channel-wide history is optional. Solo chats and DMs always share one session. Replies remain in the triggering thread, except Solo chats, which stay top-level.
+- Agents added to multiple communities use each membership's connection, memory, session index, and job lifecycle. Existing history stays in place; older hosts that only provide a public key remain supported.
 - Owner mentions and cryptographically verified NIP-OA delegate mentions can start local work. Unrelated authors are ignored. Buzz supplies signature-verified events; the plugin separately verifies delegation.
 - The standard Buzz tools are available with a `buzz_` prefix: conversations, profiles, channels, Canvas, attachments, media, memory, notes, repositories, agent management, Interests and watches. Tools added by active plugins are included too. `buzz_read` and `buzz_send` default to the current conversation and accept explicit destinations. Agent keys stay in Buzz’s native signing service, not in the OMP process or plugin JavaScript.
 - OMP’s own filesystem and shell tools run in the configured working directory. Relative paths in `buzz_send` attachments resolve there too. With OMP’s filesystem tools enabled, it exposes Buzz host tools through `xd://buzz_<name>`: read the tool description, then write its JSON arguments to that virtual path.

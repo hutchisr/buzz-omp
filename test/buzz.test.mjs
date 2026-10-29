@@ -53,6 +53,17 @@ test("standard Buzz tools and shared Attention schemas reach OMP", () => {
   assert(bridge.tools.every((tool) => tool.parameters.type === "object"));
 });
 
+test("Buzz tools select the membership's connection while memory still uses its public identity", async () => {
+  const f = fixture();
+  f.agent.key = `${pubkey}@another.invalid`;
+  const relay = f.agents.relay;
+  f.agents.relay = (key) => { assert.equal(key, f.agent.key); return relay(); };
+  const bridge = buzzTools({ agent: f.agent, agents: f.agents, host: f.host, workspace: "/workspace" });
+  assert.match(text(await bridge.call("buzz_mem_get", { slug: "core" })), /saved memory/);
+  assert.equal((await bridge.call("buzz_send", { channel, text: "Other community" })).isError, undefined);
+  assert.equal(f.posts.length, 1);
+});
+
 test("Attention uses the live owner switch, expected-state tokens and standard watch fields", async () => {
   const f = fixture();
   assert.match(f.bridge.note(), /no Interests/);

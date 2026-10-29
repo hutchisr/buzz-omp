@@ -1,11 +1,12 @@
 import { appClient, sessionTools, callSessionTool, turnNote, content } from "../vendor/buzz/session-tools.mjs";
+import { agentKey } from "./identity.mjs";
 
 // The shared handlers own Buzz semantics. This adapter supplies only the
 // injected host services and OMP's names/result format; keys stay in Buzz.
 export function buzzTools({ agent, agents, host, workspace, context = {}, signal, onSend }) {
   const added = () => agents.tools?.() ?? [];
   const snapshot = () => {
-    const value = agents.relay(agent.pubkey)?.snapshot();
+    const value = agents.relay(agentKey(agent))?.snapshot();
     if (value?.status !== "ready" || value.viewer !== agent.owner || !value.origin)
       throw new Error("The agent's community is not ready");
     return value;

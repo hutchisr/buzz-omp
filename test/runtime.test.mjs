@@ -18,6 +18,80 @@ function setup(channelType = "channel") {
       session }) }) };
   return { runtime: new Runtime({}, agents), agent, agents };
 }
+function memberships() {
+  const f = setup();
+  const home = { ...f.agent, key: pubkey };
+  const away = { ...f.agent, key: `${pubkey}@other.invalid` };
+  const otherChannel = "027684d6-b3a4-4974-b1c9-27fa3c7b8b5e";
+  const connection = (origin, id, channelType) => ({ status: "ready", viewer: owner, origin,
+    session: { channels: { get: (key) => key === id ? { id, channelType } : undefined, list: () => ({ channels: [] }) } } });
+  const snapshots = new Map([[home.key, connection("https://home.invalid", channelId, "channel")],
+    [away.key, connection("https://other.invalid", otherChannel, "solo")]]);
+  f.agents.relay = (key) => ({ snapshot: () => snapshots.get(key) });
+  return { ...f, home, away, otherChannel };
+}
+test("an agent in another community routes and reads memory through that membership", async () => {
+  const { runtime, agents, home, away, otherChannel } = memberships();
+  const posts = [], cores = [];
+  away.query = async () => [];
+  away.publish = async (event) => { posts.push(event); return { id: reply }; };
+  agents.core = async (key) => { cores.push(key); return "Other community memory"; };
+  runtime.host = {
+    resolveDirectory: async (path) => path,
+    async spawn(_id, options) {
+      const emit = (frame) => options.onStdout(`${JSON.stringify(frame)}\n`);
+      emit({ type: "ready", protocolVersion: 1 });
+      return { exited: new Promise(() => {}), kill: async () => {}, write: async (line) => {
+        const command = JSON.parse(line);
+        emit({ type: "response", command: command.type, id: command.id, success: true, data: {} });
+        if (command.type !== "prompt") return;
+        emit({ type: "message_end", message: { role: "assistant", stopReason: "stop", content: [{ type: "text", text: "Here" }] } });
+        emit({ type: "prompt_result", id: command.id, status: "completed", agentInvoked: true, sessionSettled: true });
+      } };
+    },
+  };
+  let work;
+  await runtime.run({ agent: away, config: {}, signal: new AbortController().signal, current: () => true,
+    trigger: { type: "mention", event: { id: root, pubkey: owner, kind: 9, created_at: 1, tags: [["h", otherChannel]], content: "Hi" } },
+    workingUntil: (value) => { work = value; } });
+  assert.deepEqual(await work, { ok: true });
+  assert.deepEqual(cores, [away.key]);
+  assert.deepEqual(posts[0].tags, [["h", otherChannel]], "Solo reply stays top-level");
+  assert.equal(runtime.sessions(home.key).length, 0);
+  assert.equal(runtime.sessions(away.key)[0].channelId, otherChannel);
+  await runtime.dispose();
+});
+test("membership jobs do not serialize or stop another community's standalone turn", async () => {
+  const { runtime, home, away } = memberships();
+  let release, awaySignal;
+  const blocked = new Promise((resolve) => { release = resolve; });
+  const first = runtime.enqueue(home, "once:watch", undefined, () => blocked);
+  const second = runtime.enqueue(away, "once:watch", undefined, async (job) => { awaySignal = job.signal; await blocked; });
+  await Promise.resolve(); await Promise.resolve();
+  assert(awaySignal, "Other membership starts without waiting on the home membership");
+  runtime.sync([away]);
+  assert.equal(runtime.job(home.key, "once:watch").signal.aborted, true);
+  assert.equal(awaySignal.aborted, false);
+  release(); await Promise.all([first, second]); await runtime.dispose();
+});
+test("membership indexes preserve legacy community history without modifying the home index", async () => {
+  const { runtime, agents, home, away, otherChannel } = memberships();
+  const places = [runtime.place(home, channelId, root), runtime.place(away, otherChannel)];
+  const legacy = JSON.stringify(places.map(({ key, origin, channelId, root }) => ({ key, origin, channelId, root, epoch: 3, at: 1 })));
+  await agents.storage.set(`local.omp.sessions.v1:${pubkey}`, legacy);
+  const relay = agents.relay;
+  agents.relay = (key) => key === away.key ? undefined : relay(key);
+  assert.deepEqual(runtime.sessions(away.key), [], "Opening Activity before connection must not discard old history");
+  agents.relay = relay;
+  assert.equal(runtime.sessions(away.key).length, 1);
+  assert.equal(runtime.sessions(away.key)[0].epoch, 3);
+  await runtime.control(away, { channelId: otherChannel }, "new");
+  assert.equal(agents.storage.get(`local.omp.sessions.v1:${pubkey}`), legacy);
+  const restarted = new Runtime({}, agents);
+  assert.equal(restarted.sessions(away.key)[0].epoch, 4);
+  assert.equal(restarted.sessions(home.key)[0].epoch, 3);
+  await Promise.all([runtime.dispose(), restarted.dispose()]);
+});
 test("thread routing follows reply markers, while shared sessions retain each turn's reply destination", () => {
   const { runtime, agent } = setup();
   const delivery = { agent, config: agent.config, trigger: { type: "mention", event: { id: reply,

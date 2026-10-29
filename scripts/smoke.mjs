@@ -95,14 +95,15 @@ const host = {
       end: async () => { child.stdin.end(); }, kill: async () => { child.kill("SIGKILL"); await exited; }, exited };
   },
 };
-const agent = { pubkey, owner, name: "OMP smoke", config: { workspace: "~/.buzz", model: "smoke/smoke", effort: "auto" },
+const agent = { key: `${pubkey}@smoke.invalid`, pubkey, owner, name: "OMP smoke", config: { workspace: "~/.buzz", model: "smoke/smoke", effort: "auto" },
   attention: { enabled: () => true, classifier: () => "unavailable", interests: () => { attentionReads++; return []; } },
   upload: async (data) => { uploads.push(Buffer.from(data, "base64").toString()); return { url: "https://smoke.invalid/media/output.txt", sha256: "f".repeat(64), type: "text/plain", size: 18 }; },
   query: async () => [], publish: async (event) => { const saved = { ...event, id: `${posted.length + 1}`.padStart(64, "0") }; posted.push(saved); return saved; } };
 const session = { channels: { get: () => ({ id: channel, channelType: "channel", name: "Smoke" }) } };
-const agents = { storage: { get: (key) => store.get(key), set: async (key, value) => store.set(key, value) }, core: async () => null,
+const agents = { storage: { get: (key) => store.get(key), set: async (key, value) => store.set(key, value) },
+  core: async (key) => { assert.equal(key, agent.key); return null; },
   tools: () => [{ name: "smoke_probe", description: "Test plugin tool", inputSchema: { type: "object", properties: {} }, call: async () => { pluginCalls++; return "plugin verified"; } }],
-  relay: () => ({ snapshot: () => ({ status: "ready", viewer: owner, origin: "https://smoke.invalid", session }) }) };
+  relay: (key) => { assert.equal(key, agent.key); return { snapshot: () => ({ status: "ready", viewer: owner, origin: "https://smoke.invalid", session }) }; } };
 let runtime = new Runtime(host, agents);
 async function delivery(content, { interrupt = false } = {}) {
   let done, stop;

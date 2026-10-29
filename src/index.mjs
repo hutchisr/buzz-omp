@@ -1,4 +1,5 @@
 import { Runtime, DEFAULTS, EFFORTS, config } from "./runtime.mjs";
+import { agentKey } from "./identity.mjs";
 import { createControls } from "./ui.mjs";
 import ompArtwork from "./omp.svg";
 
@@ -108,7 +109,7 @@ export function apply(ctx) {
     const [draft, setDraft] = React.useState(() => config(agent.config));
     const [saving, setSaving] = React.useState(false);
     const [error, setError] = React.useState("");
-    React.useEffect(() => { setDraft(config(agent.config)); }, [agent.pubkey, agent.config]);
+    React.useEffect(() => { setDraft(config(agent.config)); }, [agentKey(agent), agent.config]);
     const dirty = JSON.stringify(draft) !== JSON.stringify(config(agent.config));
     return h("form", { style: stack, onSubmit: async (event) => {
       event.preventDefault(); setSaving(true); setError("");
@@ -124,7 +125,7 @@ export function apply(ctx) {
   }
   function Activity({ agent }) {
     React.useSyncExternalStore(runtime.subscribe, runtime.snapshot, runtime.snapshot);
-    const sessions = runtime.sessions(agent.pubkey);
+    const sessions = runtime.sessions(agentKey(agent));
     return h("div", { style: stack }, h("h3", { className: "text-body", style: { margin: 0 } }, "OMP conversations"),
       !sessions.length ? h("p", { className: "buzz-field-description", style: { margin: 0 } }, "Mention this agent in a Buzz conversation to start its first session.") :
         h("ul", { style: { ...stack, listStyle: "none", padding: 0 } }, ...sessions.map((session) =>
@@ -144,7 +145,7 @@ export function apply(ctx) {
     summary: (agent) => config(agent.config).model || "OMP default model",
     tabs: [{ id: "settings", title: "Settings", role: "settings", splitSettings: true, component: Settings },
       { id: "activity", title: "Activity", role: "activity", component: Activity }],
-    sessions: { list: (pubkey) => runtime.sessions(pubkey), subscribe: runtime.subscribe },
+    sessions: { list: (key) => runtime.sessions(key), subscribe: runtime.subscribe },
     sessionControls: { scope: (agent) => config(agent.config).scope,
       state: (agent, place) => runtime.state(agent, place), run: (agent, place, action) => runtime.control(agent, place, action), subscribe: runtime.subscribe },
     models: (agent) => runtime.models(agent), run: (delivery) => runtime.run(delivery),
