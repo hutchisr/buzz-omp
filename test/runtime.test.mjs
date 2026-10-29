@@ -246,6 +246,65 @@ test("a recovered OMP retry posts its final answer, not the earlier error or pro
   await runtime.dispose();
 });
 
+test("reaction-only completion is silent, while written answers and real failures are preserved", async () => {
+  for (const scenario of ["silent", "text", "failed-reaction", "provider-error", "empty"]) {
+    const { runtime, agent } = setup();
+    const posts = [];
+    let work, toolResult;
+    agent.query = async () => [];
+    agent.publish = async (event) => {
+      if (scenario === "failed-reaction" && event.kind === 7) throw new Error("Reaction refused");
+      posts.push(event); return { ...event, id: reply };
+    };
+    runtime.agents.core = async () => null;
+    runtime.host = {
+      resolveDirectory: async (path) => path,
+      async spawn(_id, options) {
+        const emit = (frame) => options.onStdout(`${JSON.stringify(frame)}\n`);
+        const finish = (id) => {
+          const failed = scenario === "provider-error";
+          emit({ type: "message_end", message: { role: "assistant", stopReason: failed ? "error" : "stop",
+            ...(failed && { errorMessage: "Provider unavailable" }), content: [{ type: "text", text: scenario === "text" ? "Written answer" : "" }] } });
+          emit({ type: "prompt_result", id, status: "completed", agentInvoked: true, sessionSettled: true });
+        };
+        let promptId;
+        emit({ type: "ready", protocolVersion: 1 });
+        return { exited: new Promise(() => {}), kill: async () => {}, write: async (line) => {
+          const command = JSON.parse(line);
+          if (command.type === "host_tool_result") {
+            toolResult = command;
+            finish(promptId);
+            return;
+          }
+          emit({ type: "response", command: command.type, id: command.id, success: true, data: {} });
+          if (command.type !== "prompt") return;
+          promptId = command.id;
+          if (scenario === "empty") finish(promptId);
+          else emit({ type: "host_tool_call", id: "reaction", toolName: "buzz_react", arguments: { id: root, emoji: "👍" } });
+        } };
+      },
+    };
+    await runtime.run({ agent, config: {}, signal: new AbortController().signal, current: () => true,
+      trigger: { type: "mention", event: { id: root, pubkey: owner, kind: 9, created_at: 1, tags: [["h", channelId]], content: "React without text" } },
+      workingUntil: (value) => { work = value; } });
+    const result = await work;
+    const failed = ["failed-reaction", "provider-error", "empty"].includes(scenario);
+    assert.equal(result.ok, !failed, `${scenario}: ${JSON.stringify(result)}`);
+    if (scenario === "failed-reaction") assert.equal(toolResult.isError, true);
+    if (scenario === "silent") {
+      assert.deepEqual(posts.map((event) => event.kind), [7]);
+      assert.equal(runtime.sessions(pubkey)[0].status, "Idle");
+    } else if (scenario === "text") {
+      assert.deepEqual(posts.map((event) => event.kind), [7, 9]);
+      assert.equal(posts[1].content, "Written answer");
+    } else {
+      assert.equal(posts.at(-1).kind, 9);
+      assert.match(posts.at(-1).content, /couldn’t finish/);
+    }
+    await runtime.dispose();
+  }
+});
+
 test("unsaved-agent discovery survives agent sync and stops on caller cancellation", async () => {
   const { runtime } = setup();
   const controller = new AbortController();

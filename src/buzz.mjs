@@ -3,7 +3,7 @@ import { agentKey } from "./identity.mjs";
 
 // The shared handlers own Buzz semantics. This adapter supplies only the
 // injected host services and OMP's names/result format; keys stay in Buzz.
-export function buzzTools({ agent, agents, host, workspace, context = {}, signal, onSend }) {
+export function buzzTools({ agent, agents, host, workspace, context = {}, signal, onSend, onReaction }) {
   const added = () => agents.tools?.() ?? [];
   const snapshot = () => {
     const value = agents.relay(agentKey(agent))?.snapshot();
@@ -73,7 +73,10 @@ export function buzzTools({ agent, agents, host, workspace, context = {}, signal
           if (thread !== undefined && reply !== undefined) throw new Error("Use only one of thread or reply");
           args = { audience: "everyone", ...rest, ...(thread !== undefined || reply !== undefined ? { reply: reply ?? thread } : {}) };
         }
-        return { content: content(await callSessionTool(client(callSignal), context, name.slice(5), args, added())) };
+        const reply = await callSessionTool(client(callSignal), context, name.slice(5), args, added());
+        // Adding or removing a reaction can be the whole requested response.
+        if (name === "buzz_react") onReaction?.();
+        return { content: content(reply) };
       } catch (error) {
         return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
       }

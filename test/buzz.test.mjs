@@ -117,6 +117,27 @@ test("legacy send arguments and send completion suppress fallback, including can
   assert.equal(f.posts.length, 1);
 });
 
+test("only successful reactions count as a reaction response, including removal", async () => {
+  let reacted = 0, sent = 0;
+  const f = fixture({ onReaction: () => { reacted++; }, onSend: () => { sent++; } });
+  assert.equal((await f.bridge.call("buzz_interest_list", {})).isError, undefined);
+  assert.equal(reacted, 0);
+  assert.equal(text(await f.bridge.call("buzz_react", { id: root, emoji: "👍" })), "reacted");
+  assert.equal(reacted, 1);
+  assert.deepEqual(f.posts[0], { kind: 7, content: "👍", tags: [["e", root]] });
+  f.agent.query = async () => [{ id: "f".repeat(64), ...f.posts[0] }];
+  assert.equal(text(await f.bridge.call("buzz_react", { id: root, emoji: "👍", off: true })), "removed");
+  assert.equal(reacted, 2);
+  assert.equal(f.posts[1].kind, 5);
+  f.agent.query = async () => [];
+  assert.equal(text(await f.bridge.call("buzz_react", { id: root, emoji: "👍", off: true })), "no such reaction");
+  assert.equal(reacted, 3, "Removing an already-absent reaction is an idempotent success");
+  f.agent.publish = async () => { throw new Error("Reaction refused"); };
+  assert.equal((await f.bridge.call("buzz_react", { id: root, emoji: "👍" })).isError, true);
+  assert.equal(reacted, 3);
+  assert.equal(sent, 0, "Reactions must not suppress a final textual answer");
+});
+
 test("added tools receive the Buzz client and disappear when their plugin unloads", async () => {
   const f = fixture();
   let called = 0;

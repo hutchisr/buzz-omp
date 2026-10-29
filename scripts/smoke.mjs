@@ -28,11 +28,14 @@ const server = createServer(async (request, response) => {
   const input = JSON.parse(body);
   requests.push(input);
   const messages = input.messages;
-  const lastUser = messages.findLastIndex((message) => message.role === "user");
+  // Keep following the original request when OMP nudges after an empty final.
+  const lastUser = messages.findLastIndex((message) => message.role === "user"
+    && !JSON.stringify(message.content).includes("<system-injection>"));
   const prompt = JSON.stringify(messages[lastUser]?.content);
   response.writeHead(200, { "content-type": "text/event-stream" });
   if (prompt.includes("wait-for-interrupt")) { waiting(); return; }
   const toolTurn = prompt.includes("tool-roundtrip") || prompt.includes("standalone-turn");
+  const reactionOnly = prompt.includes("reaction-only");
   const called = messages.slice(lastUser + 1).filter((message) => message.role === "tool");
   const text = prompt.includes("standalone-turn") ? "OMP standalone" : "OMP host tool roundtrip";
   // With filesystem tools active, OMP mounts host tools as virtual devices.
@@ -47,14 +50,15 @@ const server = createServer(async (request, response) => {
     ...hostCall("buzz_interest_list", {}),
     ...hostCall("buzz_smoke_probe", {}),
     ...hostCall("buzz_send", { text: "Workspace and Attention verified", files: ["workspace-output.txt"] }),
-  ] : toolTurn ? hostCall("buzz_send", { text, ...(prompt.includes("standalone-turn") && { channel }) }) : [];
+  ] : reactionOnly ? hostCall("buzz_react", { id: root, emoji: "👍" })
+    : toolTurn ? hostCall("buzz_send", { text, ...(prompt.includes("standalone-turn") && { channel }) }) : [];
   // Compaction uses a separate text-only request containing previous messages.
   const next = input.tools?.length ? sequence[called.length] : undefined;
   const tool = !!next;
   if (tool) assert(input.tools?.some((entry) => entry.function.name === next[0]), `Missing OMP tool ${next[0]}`);
   const delta = tool ? { role: "assistant", tool_calls: [{ index: 0, id: `call_${requests.length}`, type: "function",
     function: { name: next[0], arguments: JSON.stringify(next[1]) } }] }
-    : { role: "assistant", content: toolTurn ? "Already sent." : "OMP persistent reply" };
+    : { role: "assistant", content: reactionOnly ? "" : toolTurn ? "Already sent." : "OMP persistent reply" };
   const frame = (choices, extra = {}) => `data: ${JSON.stringify({ id: `chatcmpl-${requests.length}`, object: "chat.completion.chunk",
     created: Math.floor(Date.now() / 1000), model: "smoke", choices, ...extra })}\n\n`;
   response.write(frame([{ index: 0, delta, finish_reason: null }]));
@@ -155,10 +159,15 @@ try {
   assert.deepEqual(uploads, ["workspace verified"]);
   assert.equal(posted.length, beforeFiles + 1, "File send suppresses the fallback");
   assert.match(posted.at(-1).content, /Workspace and Attention verified/);
+  const beforeReaction = posted.length;
+  await delivery("reaction-only");
+  assert.deepEqual(posted.slice(beforeReaction).map(({ kind, content }) => ({ kind, content })), [{ kind: 7, content: "👍" }],
+    "A successful reaction with empty final text must not post a fallback or failure notice");
+  assert.equal(runtime.sessions(agent.key)[0].status, "Idle");
   const count = posted.length;
   await delivery("wait-for-interrupt", { interrupt: true });
   assert.equal(posted.length, count, "Stop must not post a partial answer");
-  console.log("PASS: real OMP workspace read/write/readback, file attachment, Attention and plugin-tool roundtrips, no duplicate reply, model discovery, persistent restart, Compact, New session, standalone turn, and Stop");
+  console.log("PASS: real OMP workspace read/write/readback, file attachment, Attention and plugin-tool roundtrips, silent reaction-only completion, no duplicate reply, model discovery, persistent restart, Compact, New session, standalone turn, and Stop");
 } finally {
   await runtime.dispose();
   for (const child of children) child.kill("SIGKILL");
